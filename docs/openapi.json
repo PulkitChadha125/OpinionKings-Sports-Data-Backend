@@ -1,0 +1,1631 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "OpinionKings Sports Data Backend",
+    "description": "\nSports data + prediction-market backend for **OpinionKings**.\n\nVendors: **OddsPapi** (fixtures, odds and contract mapping for Kalshi, Polymarket,\nPolymarket US, ProphetX, Limitless ...) and **SportsDataIO** (scores, stats, injuries, lineups).\n\n### Quick guide - fetching data from an exchange\n1. `GET /exchanges/sports` - find the `sportId` (e.g. cricket).\n2. `GET /exchanges/kalshi/fixtures?sport_id=10&status=upcoming` - matches listed on Kalshi.\n3. `GET /exchanges/kalshi/fixtures/{fixture_id}/odds` - live prices for that match.\n4. `GET /exchanges/kalshi/mapping?fixture_ids={fixture_id}` - Kalshi's own ticker for the match.\n\nSwap `kalshi` for `polymarket`, `polymarket.us`, `prophetx`, `limitless-ex`, ... (dropdown in each endpoint).\n\n### Our own data\n* `GET /fixtures?lifecycle=ACTIVE` - matches with markets activated (24h before start).\n* `WS  /ws/live?fixture_id=...` - real-time scores / odds / lifecycle pushes.\n",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics/latency": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Latency",
+        "description": "Live latency/staleness per provider and endpoint (rolling window).",
+        "operationId": "latency_metrics_latency_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/metrics/latency/history": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Latency History",
+        "description": "Persisted per-minute aggregates - the raw material for the vendor comparison report.",
+        "operationId": "latency_history_metrics_latency_history_get",
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 500,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/exchanges/sports": {
+      "get": {
+        "tags": [
+          "exchanges"
+        ],
+        "summary": "List all sports (find the cricket sportId here)",
+        "description": "Returns OddsPapi's sport catalogue. Use the `sportId` values in the other endpoints.",
+        "operationId": "list_sports_exchanges_sports_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/exchanges": {
+      "get": {
+        "tags": [
+          "exchanges"
+        ],
+        "summary": "List supported exchanges and their metadata",
+        "description": "Metadata (name, flags such as `staleOdds`) for every exchange in the `Exchange` enum.",
+        "operationId": "list_exchanges_exchanges_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/exchanges/{exchange}/fixtures": {
+      "get": {
+        "tags": [
+          "exchanges"
+        ],
+        "summary": "Fixtures listed on an exchange",
+        "description": "Matches that have markets on the chosen exchange.\n\nExample: `GET /exchanges/kalshi/fixtures?sport_id=10&status=upcoming`",
+        "operationId": "exchange_fixtures_exchanges__exchange__fixtures_get",
+        "parameters": [
+          {
+            "name": "exchange",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Exchange",
+              "description": "Exchange (OddsPapi bookmaker slug)",
+              "examples": [
+                "kalshi"
+              ]
+            },
+            "description": "Exchange (OddsPapi bookmaker slug)"
+          },
+          {
+            "name": "sport_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "description": "OddsPapi sportId (10 soccer, 11 basketball, 14 NFL; cricket: see /exchanges/sports)",
+              "default": 10,
+              "title": "Sport Id"
+            },
+            "description": "OddsPapi sportId (10 soccer, 11 basketball, 14 NFL; cricket: see /exchanges/sports)"
+          },
+          {
+            "name": "tournament_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional OddsPapi tournamentId",
+              "title": "Tournament Id"
+            },
+            "description": "Optional OddsPapi tournamentId"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(all|upcoming|live)$",
+              "description": "all | upcoming | live",
+              "default": "all",
+              "title": "Status"
+            },
+            "description": "all | upcoming | live"
+          },
+          {
+            "name": "raw",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Return the vendor payload untouched",
+              "default": false,
+              "title": "Raw"
+            },
+            "description": "Return the vendor payload untouched"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/exchanges/{exchange}/fixtures/{fixture_id}/odds": {
+      "get": {
+        "tags": [
+          "exchanges"
+        ],
+        "summary": "Prices for a fixture on an exchange",
+        "description": "Current odds/prices for every market of this fixture on the exchange\n(`odds[exchange][oddsId]`). Exchanges also carry back/lay ladders and liquidity.\n\nExample: `GET /exchanges/polymarket/fixtures/id1000001761300517/odds`",
+        "operationId": "exchange_fixture_odds_exchanges__exchange__fixtures__fixture_id__odds_get",
+        "parameters": [
+          {
+            "name": "exchange",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Exchange",
+              "description": "Exchange (OddsPapi bookmaker slug)",
+              "examples": [
+                "kalshi"
+              ]
+            },
+            "description": "Exchange (OddsPapi bookmaker slug)"
+          },
+          {
+            "name": "fixture_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "OddsPapi fixture id",
+              "examples": [
+                "id1000001761300517"
+              ],
+              "title": "Fixture Id"
+            },
+            "description": "OddsPapi fixture id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/exchanges/{exchange}/mapping": {
+      "get": {
+        "tags": [
+          "exchanges"
+        ],
+        "summary": "Map OddsPapi fixtures to the exchange's own ids",
+        "description": "Returns the exchange-native identifier (e.g. Kalshi event ticker, Polymarket market slug)\nfor each fixture - this is how a match is linked to its tradable contract.\n\nExample: `GET /exchanges/kalshi/mapping?fixture_ids=id1000001761300517`",
+        "operationId": "exchange_mapping_exchanges__exchange__mapping_get",
+        "parameters": [
+          {
+            "name": "exchange",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Exchange",
+              "description": "Exchange (OddsPapi bookmaker slug)",
+              "examples": [
+                "kalshi"
+              ]
+            },
+            "description": "Exchange (OddsPapi bookmaker slug)"
+          },
+          {
+            "name": "fixture_ids",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated OddsPapi fixture ids",
+              "examples": [
+                "id1000001761300517"
+              ],
+              "title": "Fixture Ids"
+            },
+            "description": "Comma-separated OddsPapi fixture ids"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stats/soccer/competitions": {
+      "get": {
+        "tags": [
+          "stats (SportsDataIO)"
+        ],
+        "summary": "Soccer competitions available on your plan",
+        "operationId": "soccer_competitions_stats_soccer_competitions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stats/soccer/games": {
+      "get": {
+        "tags": [
+          "stats (SportsDataIO)"
+        ],
+        "summary": "Soccer games (schedule + live/final scores) for a date",
+        "description": "Example: `GET /stats/soccer/games?competition=3&day=2026-11-25`",
+        "operationId": "soccer_games_stats_soccer_games_get",
+        "parameters": [
+          {
+            "name": "competition",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Soccer competition id/key. Default from .env (trial: 3 = UEFA Champions League)",
+              "examples": [
+                "3"
+              ],
+              "title": "Competition"
+            },
+            "description": "Soccer competition id/key. Default from .env (trial: 3 = UEFA Champions League)"
+          },
+          {
+            "name": "day",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "YYYY-MM-DD, defaults to today",
+              "examples": [
+                "2026-11-25"
+              ],
+              "title": "Day"
+            },
+            "description": "YYYY-MM-DD, defaults to today"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stats/soccer/box-scores": {
+      "get": {
+        "tags": [
+          "stats (SportsDataIO)"
+        ],
+        "summary": "Live box scores (team + player stats) for a date",
+        "operationId": "soccer_box_scores_stats_soccer_box_scores_get",
+        "parameters": [
+          {
+            "name": "competition",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Soccer competition id/key. Default from .env (trial: 3 = UEFA Champions League)",
+              "examples": [
+                "3"
+              ],
+              "title": "Competition"
+            },
+            "description": "Soccer competition id/key. Default from .env (trial: 3 = UEFA Champions League)"
+          },
+          {
+            "name": "day",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "YYYY-MM-DD, defaults to today",
+              "examples": [
+                "2026-11-25"
+              ],
+              "title": "Day"
+            },
+            "description": "YYYY-MM-DD, defaults to today"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stats/soccer/box-score/{game_id}": {
+      "get": {
+        "tags": [
+          "stats (SportsDataIO)"
+        ],
+        "summary": "Box score for one game",
+        "operationId": "soccer_box_score_stats_soccer_box_score__game_id__get",
+        "parameters": [
+          {
+            "name": "game_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "SportsDataIO GameId",
+              "title": "Game Id"
+            },
+            "description": "SportsDataIO GameId"
+          },
+          {
+            "name": "competition",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Soccer competition id/key. Default from .env (trial: 3 = UEFA Champions League)",
+              "examples": [
+                "3"
+              ],
+              "title": "Competition"
+            },
+            "description": "Soccer competition id/key. Default from .env (trial: 3 = UEFA Champions League)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stats/soccer/lineups": {
+      "get": {
+        "tags": [
+          "stats (SportsDataIO)"
+        ],
+        "summary": "Projected/confirmed lineups for a date",
+        "operationId": "soccer_lineups_stats_soccer_lineups_get",
+        "parameters": [
+          {
+            "name": "competition",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Soccer competition id/key. Default from .env (trial: 3 = UEFA Champions League)",
+              "examples": [
+                "3"
+              ],
+              "title": "Competition"
+            },
+            "description": "Soccer competition id/key. Default from .env (trial: 3 = UEFA Champions League)"
+          },
+          {
+            "name": "day",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "YYYY-MM-DD, defaults to today",
+              "examples": [
+                "2026-11-25"
+              ],
+              "title": "Day"
+            },
+            "description": "YYYY-MM-DD, defaults to today"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stats/soccer/injuries": {
+      "get": {
+        "tags": [
+          "stats (SportsDataIO)"
+        ],
+        "summary": "Injured players",
+        "operationId": "soccer_injuries_stats_soccer_injuries_get",
+        "parameters": [
+          {
+            "name": "competition",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Soccer competition id/key. Default from .env (trial: 3 = UEFA Champions League)",
+              "examples": [
+                "3"
+              ],
+              "title": "Competition"
+            },
+            "description": "Soccer competition id/key. Default from .env (trial: 3 = UEFA Champions League)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stats/{league}/games": {
+      "get": {
+        "tags": [
+          "stats (SportsDataIO)"
+        ],
+        "summary": "NBA / MLB / NHL games for a date",
+        "description": "Example: `GET /stats/nba/games?day=2026-11-25`",
+        "operationId": "league_games_stats__league__games_get",
+        "parameters": [
+          {
+            "name": "league",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/League"
+            }
+          },
+          {
+            "name": "day",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "YYYY-MM-DD, defaults to today",
+              "examples": [
+                "2026-11-25"
+              ],
+              "title": "Day"
+            },
+            "description": "YYYY-MM-DD, defaults to today"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stats/{league}/injuries": {
+      "get": {
+        "tags": [
+          "stats (SportsDataIO)"
+        ],
+        "summary": "NBA / MLB / NHL injuries",
+        "operationId": "league_injuries_stats__league__injuries_get",
+        "parameters": [
+          {
+            "name": "league",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/League"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fixtures": {
+      "get": {
+        "tags": [
+          "fixtures"
+        ],
+        "summary": "List Fixtures",
+        "operationId": "list_fixtures_fixtures_get",
+        "parameters": [
+          {
+            "name": "lifecycle",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Lifecycle"
+            }
+          },
+          {
+            "name": "sport_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Sport Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 200,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/FixtureOut"
+                  },
+                  "title": "Response List Fixtures Fixtures Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/fixtures/{fixture_id}": {
+      "get": {
+        "tags": [
+          "fixtures"
+        ],
+        "summary": "Get Fixture",
+        "description": "Lookup by internal id or OddsPapi fixture id.",
+        "operationId": "get_fixture_fixtures__fixture_id__get",
+        "parameters": [
+          {
+            "name": "fixture_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Fixture Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FixtureDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/sync-fixtures": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Sync Fixtures",
+        "operationId": "sync_fixtures_admin_sync_fixtures_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/activate-markets": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Activate Markets",
+        "operationId": "activate_markets_admin_activate_markets_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/link-sportsdataio": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Link Sportsdataio",
+        "operationId": "link_sportsdataio_admin_link_sportsdataio_post",
+        "parameters": [
+          {
+            "name": "day",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Day"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vendors/oddspapi/{path}": {
+      "get": {
+        "tags": [
+          "vendor passthrough (trial only)"
+        ],
+        "summary": "Oddspapi",
+        "operationId": "oddspapi_vendors_oddspapi__path__get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vendors/sportsdataio/{path}": {
+      "get": {
+        "tags": [
+          "vendor passthrough (trial only)"
+        ],
+        "summary": "Sportsdataio",
+        "operationId": "sportsdataio_vendors_sportsdataio__path__get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "EventOut": {
+        "properties": {
+          "from_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From State"
+          },
+          "to_state": {
+            "type": "string",
+            "title": "To State"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from_state",
+          "to_state",
+          "reason",
+          "at"
+        ],
+        "title": "EventOut"
+      },
+      "Exchange": {
+        "type": "string",
+        "enum": [
+          "kalshi",
+          "polymarket",
+          "polymarket.us",
+          "prophetx",
+          "limitless-ex",
+          "novig.us",
+          "gemini",
+          "myriad",
+          "robinhood",
+          "crypto.com",
+          "draftkings-predictions",
+          "betfair-ex",
+          "matchbook"
+        ],
+        "title": "Exchange",
+        "description": "OddsPapi bookmaker slugs for prediction-market exchanges."
+      },
+      "FixtureDetail": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "oddspapi_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oddspapi Id"
+          },
+          "sportsdataio_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sportsdataio Id"
+          },
+          "sport_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sport Id"
+          },
+          "sport_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sport Name"
+          },
+          "tournament_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tournament Name"
+          },
+          "home": {
+            "type": "string",
+            "title": "Home"
+          },
+          "away": {
+            "type": "string",
+            "title": "Away"
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start Time"
+          },
+          "lifecycle": {
+            "type": "string",
+            "title": "Lifecycle"
+          },
+          "vendor_status_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor Status Id"
+          },
+          "reschedule_count": {
+            "type": "integer",
+            "title": "Reschedule Count"
+          },
+          "home_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Home Score"
+          },
+          "away_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Away Score"
+          },
+          "activated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activated At"
+          },
+          "markets": {
+            "items": {
+              "$ref": "#/components/schemas/MarketOut"
+            },
+            "type": "array",
+            "title": "Markets",
+            "default": []
+          },
+          "scores": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scores"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/EventOut"
+            },
+            "type": "array",
+            "title": "Events",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "oddspapi_id",
+          "sportsdataio_id",
+          "sport_id",
+          "sport_name",
+          "tournament_name",
+          "home",
+          "away",
+          "start_time",
+          "lifecycle",
+          "vendor_status_id",
+          "reschedule_count",
+          "home_score",
+          "away_score",
+          "activated_at"
+        ],
+        "title": "FixtureDetail"
+      },
+      "FixtureOut": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "oddspapi_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Oddspapi Id"
+          },
+          "sportsdataio_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sportsdataio Id"
+          },
+          "sport_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sport Id"
+          },
+          "sport_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sport Name"
+          },
+          "tournament_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tournament Name"
+          },
+          "home": {
+            "type": "string",
+            "title": "Home"
+          },
+          "away": {
+            "type": "string",
+            "title": "Away"
+          },
+          "start_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start Time"
+          },
+          "lifecycle": {
+            "type": "string",
+            "title": "Lifecycle"
+          },
+          "vendor_status_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vendor Status Id"
+          },
+          "reschedule_count": {
+            "type": "integer",
+            "title": "Reschedule Count"
+          },
+          "home_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Home Score"
+          },
+          "away_score": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Away Score"
+          },
+          "activated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activated At"
+          },
+          "markets": {
+            "items": {
+              "$ref": "#/components/schemas/MarketOut"
+            },
+            "type": "array",
+            "title": "Markets",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "oddspapi_id",
+          "sportsdataio_id",
+          "sport_id",
+          "sport_name",
+          "tournament_name",
+          "home",
+          "away",
+          "start_time",
+          "lifecycle",
+          "vendor_status_id",
+          "reschedule_count",
+          "home_score",
+          "away_score",
+          "activated_at"
+        ],
+        "title": "FixtureOut"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "League": {
+        "type": "string",
+        "enum": [
+          "nba",
+          "mlb",
+          "nhl"
+        ],
+        "title": "League"
+      },
+      "MarketOut": {
+        "properties": {
+          "exchange": {
+            "type": "string",
+            "title": "Exchange"
+          },
+          "exchange_fixture_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exchange Fixture Id"
+          },
+          "market_count": {
+            "type": "integer",
+            "title": "Market Count"
+          },
+          "last_seen": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen"
+          }
+        },
+        "type": "object",
+        "required": [
+          "exchange",
+          "exchange_fixture_id",
+          "market_count",
+          "last_seen"
+        ],
+        "title": "MarketOut"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "exchanges",
+      "description": "Fetch fixtures, prices and contract ids from each prediction-market exchange (via OddsPapi)."
+    },
+    {
+      "name": "stats (SportsDataIO)",
+      "description": "Scores, box scores, lineups and injuries from SportsDataIO."
+    },
+    {
+      "name": "fixtures",
+      "description": "Our normalized fixtures with lifecycle state and mapped exchange markets."
+    },
+    {
+      "name": "live",
+      "description": "WebSocket `/ws/live` (not executable from Swagger - see README)."
+    },
+    {
+      "name": "admin",
+      "description": "Trigger background jobs manually."
+    },
+    {
+      "name": "health",
+      "description": "Service status and vendor latency metrics."
+    },
+    {
+      "name": "vendor passthrough (trial only)",
+      "description": "Raw GET passthrough to vendor APIs for exploration."
+    }
+  ]
+}

@@ -1,38 +1,39 @@
 # OpinionKings – Sports Data Backend
 
-FastAPI backend that pulls **sports data** and **prediction-market data** from two vendors,
-normalizes it, automatically activates markets 24 h before kick-off, and streams live
-updates to the OpinionKings frontend.
+FastAPI backend that pulls **prediction-market data** and **sports data** from two vendors,
+normalizes it, automatically activates markets 24 h before kick-off, and streams live updates
+to the OpinionKings frontend.
 
-| Vendor | What we use it for |
-|---|---|
-| **OddsPapi** (v5 / B2B trial) | Fixtures, live status, scores, odds, and **mapping matches to exchange contracts** on Kalshi, Polymarket, Polymarket US, ProphetX, Limitless … REST + WebSocket |
-| **SportsDataIO** | Live scores, box scores (player/team stats), lineups, injuries, historical data |
+| # | Vendor | What we use it for | Status |
+|---|---|---|---|
+| 1 | **OddsPapi** (v5 / B2B trial) | Fixtures, live status, scores, odds with order-book depth, and each exchange's own id for a match on Kalshi, Polymarket, Polymarket US, ProphetX, Limitless … (REST + WebSocket) | ✅ Key configured, verified with live data |
+| 2 | **SportsDataIO** | Live scores, box scores (player/team stats), lineups, injuries, historical data | ⏳ No key yet (endpoints return 503) |
 
-> This is the November proof of concept and vendor-evaluation build. It also measures each vendor's latency and reliability, which the vendor recommendation needs.
+> November proof of concept and vendor-evaluation build. It also measures each vendor's latency and reliability for the vendor recommendation.
+> **Progress log, known issues and next steps: [`CLAUDE.md`](CLAUDE.md).**
 
 ---
 
 ## 1. Quick start (Windows)
 
-1. Double-click **`run project.bat`**. It:
-   - creates `.venv` (Python 3.12) if it doesn't exist,
-   - installs everything in `requirements.txt` into `.venv`,
-   - creates `.env` from `.env.example` the first time,
-   - starts the server at **http://localhost:8000**.
-2. Open `.env` and add the trial keys:
+1. Double-click **`run project.bat`**. It creates `.venv`, installs `requirements.txt`, creates `.env` from
+   `.env.example` the first time, and starts the server at **http://localhost:8000**.
+2. Keys go in `.env` (gitignored, never commit it):
    ```env
-   ODDSPAPI_API_KEY=your-oddspapi-key
-   SPORTSDATAIO_API_KEY=your-sportsdataio-key
+   ODDSPAPI_API_KEY=...        # already set
+   SPORTSDATAIO_API_KEY=...    # still needed
    ```
-3. Restart `run project.bat`.
+3. Restart `run project.bat` after **any** `.env` change. `--reload` only watches `.py` files.
 
 | URL | What |
 |---|---|
-| http://localhost:8000/docs | **Swagger UI** – try every endpoint in the browser |
+| http://localhost:8000/docs | **Swagger UI**: OddsPapi sections first, then SportsDataIO, then Backend |
 | http://localhost:8000/redoc | ReDoc (read-only docs) |
-| http://localhost:8000/openapi.json | OpenAPI spec (also exported to `docs/openapi.json`) |
+| http://localhost:8000/openapi.json | OpenAPI spec (also saved to `docs/openapi.json`) |
 | http://localhost:8000/health | Status, key configuration, WebSocket connection |
+
+**Background jobs on/off:** `BACKGROUND_JOBS_ENABLED=false` in `.env` turns off the fixture sync, market activation
+**and** the OddsPapi WebSocket, so the API only answers what you call. It is currently `false`.
 
 Manual setup instead of the .bat:
 ```bash
@@ -43,91 +44,99 @@ copy .env.example .env
 uvicorn app.main:app --reload
 ```
 
-## 2. Testing the APIs
-
-Double-click **`test apis.bat`**, or run:
+## 2. Testing
 
 ```bash
-.venv\Scripts\python -m pytest -q                       # 19 unit / integration tests (vendors mocked)
-.venv\Scripts\python -m scripts.test_apis               # hits every REAL vendor endpoint + 30s WebSocket
+.venv\Scripts\python -m pytest -q                       # 19 unit/integration tests (vendors mocked)
+.venv\Scripts\python -m scripts.test_apis               # hits every REAL vendor endpoint + 30 s WebSocket
 .venv\Scripts\python -m scripts.test_apis --skip-ws     # REST only
+.venv\Scripts\python -m scripts.export_endpoints_csv    # docs/api_endpoints.csv: every endpoint, params, real response
+.venv\Scripts\python -m scripts.export_openapi          # docs/openapi.json
 ```
+`test apis.bat` runs the unit tests and the live vendor test. The live test saves raw responses to `samples/` and a
+report to `reports/` (both gitignored).
 
-`scripts/test_apis.py`:
-- calls every OddsPapi and SportsDataIO endpoint the backend depends on, and prints PASS/FAIL/SKIP with latency,
-- finds the **cricket `sportId`** from `/sports` and tests cricket fixtures,
-- picks an upcoming fixture and checks which exchanges price it, plus its Kalshi/Polymarket mapping,
-- connects to the OddsPapi WebSocket and reports message counts and delivery delay per channel,
-- saves every raw response to `samples/` (to learn the payload shapes) and writes a markdown report to `reports/`.
+**Endpoint reference:** [`docs/api_endpoints.csv`](docs/api_endpoints.csv) lists every endpoint with its parameters,
+a ready-to-paste `curl` command and a real example response. Opens in Excel.
 
 ---
 
-## 3. How to fetch data from each exchange (Swagger → *exchanges*)
+## 3. Vendor 1: OddsPapi (prediction-market exchanges)
 
-Each endpoint has a **dropdown** of exchanges: `kalshi`, `polymarket`, `polymarket.us`, `prophetx`,
-`limitless-ex`, `novig.us`, `gemini`, `myriad`, `robinhood`, `crypto.com`, `draftkings-predictions`,
-`betfair-ex`, `matchbook`.
+| | |
+|---|---|
+| Base URL | `https://v5.oddspapi.io/{lang}`, header `X-API-Key` |
+| WebSocket | `wss://v5.oddspapi.io/ws` |
+| Docs | https://docs.oddspapi.io · full bundle: https://docs.oddspapi.io/llms-full.txt · status: https://oddspapi-v5.instatus.com/ |
+| Trial | 14 days from 2026-11-17, pre-game + in-play |
+| Bookmakers on trial | `kalshi`, `polymarket`, `polymarket.us`, `prophetx`, `limitless-ex`, `draftkings-predictions`, `betfair-ex`, `matchbook`, `4casters`, `overtime.io` |
+| Tracked now (`EXCHANGES`) | `kalshi, polymarket, polymarket.us, prophetx, limitless-ex` |
+| Sport ids | 10 soccer · 11 basketball · 14 American football · **27 cricket** |
+| Rate limits | 10 req/s on odds endpoints, 200 req/min elsewhere |
+| Code | `app/providers/oddspapi.py`, `app/services/oddspapi_ws.py`, `app/api/exchanges.py` |
+
+### Endpoints (Swagger → *OddsPapi - …*)
 
 | Step | Request | Returns |
 |---|---|---|
-| 1 | `GET /exchanges/sports` | All sports + ids (find cricket) |
+| 1 | `GET /exchanges/sports` | All sports and their ids |
 | 2 | `GET /exchanges` | Exchange metadata (name, `staleOdds` flag …) |
-| 3 | `GET /exchanges/{exchange}/fixtures?sport_id=10&status=upcoming` | Matches listed on that exchange (`status`: all / upcoming / live; `raw=true` for the vendor payload) |
-| 4 | `GET /exchanges/{exchange}/fixtures/{fixture_id}/odds` | Current prices for every market of the match on that exchange |
-| 5 | `GET /exchanges/{exchange}/mapping?fixture_ids=id1,id2` | The exchange's own id for the match (Kalshi ticker, Polymarket slug …) |
-
-### Examples
+| 3 | `GET /exchanges/{exchange}/fixtures?sport_id=10&status=upcoming` | Matches listed on that exchange (`status`: all / upcoming / live; `raw=true` for the vendor payload, which includes `bookmakers.<exchange>.bookmakerFixtureId`) |
+| 4 | `GET /exchanges/{exchange}/fixtures/{fixture_id}/odds` | Prices for every market of the match, with back/lay order-book depth |
+| 5 | `GET /exchanges/{exchange}/mapping?fixture_ids=id1,id2` | The exchange's own id for the match (e.g. Kalshi `KXINTLFRIENDLYGAME-26NOV17KSAUZB`) |
+| – | `GET /vendors/oddspapi/{path}?…` | Any OddsPapi GET, untouched (trial only) |
 
 ```bash
-# Upcoming soccer matches tradable on Kalshi
 curl "http://localhost:8000/exchanges/kalshi/fixtures?sport_id=10&status=upcoming"
-
-# Live basketball matches on Polymarket
 curl "http://localhost:8000/exchanges/polymarket/fixtures?sport_id=11&status=live"
-
-# Prices for one match on ProphetX
-curl "http://localhost:8000/exchanges/prophetx/fixtures/id1000001761300517/odds"
-
-# Which Kalshi contract is this match?
-curl "http://localhost:8000/exchanges/kalshi/mapping?fixture_ids=id1000001761300517"
+curl "http://localhost:8000/exchanges/kalshi/fixtures?sport_id=27&status=upcoming"        # cricket
+curl "http://localhost:8000/exchanges/kalshi/fixtures/FIXTURE_ID/odds"
+curl "http://localhost:8000/exchanges/kalshi/mapping?fixture_ids=FIXTURE_ID"
+curl "http://localhost:8000/vendors/oddspapi/fixtures/today?sportId=10"                    # sportId is required
 ```
 
-```python
-import httpx
+### OddsPapi payload notes (verified 2026-11-17)
+- v5 fixtures are **nested**: `sport.sportId`, `tournament.tournamentName`, `participants.participant1Name`,
+  `status.statusId`, `startTime` (epoch seconds). `services/normalize.py::parse_oddspapi_fixture` reads nested fields
+  and falls back to flat ones.
+- `/fixtures/live` and `/fixtures/today` **require** `sportId` or `tournamentId` (400 otherwise).
+- Each fixture's `bookmakers.<slug>` block already includes `bookmakerFixtureId`, `fixturePath`, `hasOdds`, `staleOdds`,
+  so `/fixtures/mapping` calls are often unnecessary.
+- Odds response: `odds.<bookmaker>.<outcomeKey>` → `price`, `limit`, `meta.back[]` / `meta.lay[]` (price, cents, size),
+  `bookmakerMarketId`, `bookmakerOutcomeId`, `betslip` URL.
+- WebSocket login takes `sportIds`, `tournamentIds`, `fixtureIds`, `bookmakers` filters and
+  `receiveType` (`json` | `binary` | `zstd` | `zstd-dict`). We send `sportIds` + `bookmakers` (`Settings.ws_filters`).
 
-api = httpx.Client(base_url="http://localhost:8000")
-for exchange in ["kalshi", "polymarket", "prophetx"]:
-    matches = api.get(f"/exchanges/{exchange}/fixtures", params={"sport_id": 10, "status": "upcoming"}).json()
-    print(exchange, len(matches), "matches")
-    if matches:
-        fid = matches[0]["oddspapi_id"]
-        odds = api.get(f"/exchanges/{exchange}/fixtures/{fid}/odds").json()
-        mapping = api.get(f"/exchanges/{exchange}/mapping", params={"fixture_ids": fid}).json()
-```
+---
 
-### Stats (Swagger → *stats (SportsDataIO)*)
+## 4. Vendor 2: SportsDataIO (scores and stats)
+
+| | |
+|---|---|
+| Base URL | `https://api.sportsdata.io` |
+| Key | `SPORTSDATAIO_API_KEY` (**not configured yet**) |
+| Trial coverage | Soccer for UEFA Champions League (competition 3) only, plus NBA / MLB / NHL |
+| Code | `app/providers/sportsdataio.py`, `app/api/stats.py` |
+
+### Endpoints (Swagger → *SportsDataIO - …*)
 
 ```bash
 curl "http://localhost:8000/stats/soccer/competitions"
 curl "http://localhost:8000/stats/soccer/games?competition=3&day=2026-11-25"   # schedule + live/final scores
 curl "http://localhost:8000/stats/soccer/box-scores?day=2026-11-25"            # player & team stats
+curl "http://localhost:8000/stats/soccer/box-score/GAME_ID"
 curl "http://localhost:8000/stats/soccer/lineups?day=2026-11-25"
 curl "http://localhost:8000/stats/soccer/injuries"
-curl "http://localhost:8000/stats/nba/games?day=2026-11-25"
+curl "http://localhost:8000/stats/nba/games?day=2026-11-25"                    # nba | mlb | nhl
+curl "http://localhost:8000/stats/nba/injuries"
+curl "http://localhost:8000/vendors/sportsdataio/v4/soccer/scores/json/Competitions"   # raw passthrough
 ```
-The SportsDataIO free trial covers soccer for the **UEFA Champions League (competition 3)** only.
-
-### Raw vendor passthrough (trial only)
-
-Any vendor GET endpoint, with the key added on the server side:
-```bash
-curl "http://localhost:8000/vendors/oddspapi/fixtures/today?sportId=10"
-curl "http://localhost:8000/vendors/sportsdataio/v4/soccer/scores/json/Competitions"
-```
+Payload shapes are **not verified yet**. Once the key is in, run `scripts.test_apis`, check `samples/`, and tighten
+`services/normalize.py::parse_sportsdataio_soccer_game`.
 
 ---
 
-## 4. Our own data: fixtures, automation and the live stream
+## 5. Our backend (combines both vendors)
 
 ### Market lifecycle (automated)
 
@@ -139,106 +148,92 @@ SCHEDULED ──(start ≤ 24h & exchange markets found)──► ACTIVE ──�
         start moved outside window ──────────► SCHEDULED (deactivated)
 ```
 
-Background jobs (start automatically when `ODDSPAPI_API_KEY` is set):
+Background jobs (run when `BACKGROUND_JOBS_ENABLED=true` and `ODDSPAPI_API_KEY` is set):
 
 | Job | Every | Does |
 |---|---|---|
-| `sync_fixtures` | 10 min | Pulls fixtures for `SPORT_IDS` that are listed on your `EXCHANGES`, upserts them, applies cancel/postpone/reschedule rules |
-| `activate_markets` | 5 min | For matches starting within 24 h: finds which exchanges price them, stores the exchange ids, sets ACTIVE / PENDING_MAPPING |
-| WebSocket consumer | live | OddsPapi `fixtures`, `scores`, `odds` channels → DB + live hub; auto-reconnect with resume cursors |
-| `flush_latency` | 1 min | Saves per-minute latency stats (p50/p95/max) for the vendor report |
+| `sync_fixtures` | 10 min | Pulls fixtures for `SPORT_IDS` listed on your `EXCHANGES`, upserts them, applies cancel/postpone/reschedule rules (~2,270 fixtures seen per run) |
+| `activate_markets` | 5 min | For matches starting within 24 h: finds which exchanges price them, stores the exchange ids, sets ACTIVE / PENDING_MAPPING. **Slow: about 1 s per fixture** |
+| WebSocket consumer | live | OddsPapi `fixtures`, `scores`, `odds` → DB + live hub; auto-reconnect with resume cursors |
+| `flush_latency` | 1 min | Saves per-minute latency stats (p50/p95/max) |
 
-Trigger them by hand: `POST /admin/sync-fixtures`, `POST /admin/activate-markets`,
+Run them by hand: `POST /admin/sync-fixtures`, `POST /admin/activate-markets`,
 `POST /admin/link-sportsdataio` (fuzzy-links SportsDataIO games to our fixtures by team names and kick-off time).
 
 ### Fixture API
-
 ```bash
-curl "http://localhost:8000/fixtures?lifecycle=ACTIVE"          # tradable matches + their exchange markets
-curl "http://localhost:8000/fixtures?sport_id=10"
-curl "http://localhost:8000/fixtures/id1000001761300517"        # detail: scores + lifecycle audit trail
+curl "http://localhost:8000/fixtures?lifecycle=ACTIVE"
+curl "http://localhost:8000/fixtures?sport_id=10&limit=20"
+curl "http://localhost:8000/fixtures/FIXTURE_ID"          # detail: scores + lifecycle audit trail
 ```
 
 ### Live WebSocket for the frontend
-
 `ws://localhost:8000/ws/live?fixture_id=<oddspapi id>` for one match, or `ws://localhost:8000/ws/live` for everything.
-(Swagger can't run WebSockets, so test with the snippet below.)
+Needs background jobs on (the OddsPapi stream feeds it).
 
 ```js
-const ws = new WebSocket("ws://localhost:8000/ws/live?fixture_id=id1000001761300517");
+const ws = new WebSocket("ws://localhost:8000/ws/live?fixture_id=FIXTURE_ID");
 ws.onmessage = (e) => {
-  const msg = JSON.parse(e.data);
-  // msg.type: "scores" | "fixtures" | "odds" | "lifecycle" | "heartbeat"
+  const msg = JSON.parse(e.data); // msg.type: "scores" | "fixtures" | "odds" | "lifecycle" | "heartbeat"
   console.log(msg.type, msg.payload);
 };
 ```
-```python
-import asyncio, json, websockets
-
-async def main():
-    async with websockets.connect("ws://localhost:8000/ws/live") as ws:
-        async for raw in ws:
-            print(json.loads(raw))
-
-asyncio.run(main())
-```
 
 ### Vendor evaluation metrics
-
 ```bash
-curl http://localhost:8000/metrics/latency                                  # rolling p50/p95, errors, staleness per endpoint/channel
-curl "http://localhost:8000/metrics/latency/history?provider=oddspapi"      # persisted per-minute history
+curl http://localhost:8000/metrics/latency
+curl "http://localhost:8000/metrics/latency/history?provider=oddspapi"
 ```
-REST latency is round-trip time. WebSocket latency is `now - vendor ts`, i.e. how long the vendor's update took to reach us.
+REST latency is round-trip time. WebSocket latency is `now - vendor ts`.
 
 ---
 
-## 5. Project structure
+## 6. Project structure
 
 ```
 app/
-  main.py               FastAPI app, Swagger metadata, startup of jobs + WebSocket
-  config.py             Settings from .env
+  main.py               FastAPI app, Swagger description, startup of jobs + WebSocket
+  config.py             Settings from .env (incl. ws_filters)
   models.py             Fixture, ExchangeMarket, LifecycleEvent, LatencySummary
-  db.py                 SQLAlchemy async engine (SQLite by default, Postgres via DATABASE_URL)
+  db.py                 SQLAlchemy async engine (SQLite default, Postgres via DATABASE_URL)
   providers/
     base.py             HTTP client with retries, 429 handling, latency recording
-    oddspapi.py         OddsPapi v5 REST client
-    sportsdataio.py     SportsDataIO REST client
+    oddspapi.py         OddsPapi v5 REST client                       ← vendor 1
+    sportsdataio.py     SportsDataIO REST client                      ← vendor 2
   services/
-    oddspapi_ws.py      OddsPapi WebSocket consumer (login, resume cursors, snapshot_required)
+    oddspapi_ws.py      OddsPapi WebSocket consumer (login filters, resume cursors)
     jobs.py             fixture sync, market activation, SportsDataIO linking, latency flush
     lifecycle.py        state machine rules (pure functions, unit tested)
-    mapping.py          exchange contract discovery + fuzzy cross-vendor matching
+    mapping.py          exchange id lookup + fuzzy cross-vendor matching
     normalize.py        vendor payload → canonical fields
-    live_hub.py         in-process pub/sub for /ws/live (swap for Redis when scaling out)
+    live_hub.py         in-process pub/sub for /ws/live
     latency.py          latency/staleness tracker
-  api/                  routers: exchanges, stats, fixtures, live, admin, health, vendors
+  api/
+    tags.py             Swagger section names + descriptions (OddsPapi / SportsDataIO / Backend)
+    exchanges.py        OddsPapi endpoints
+    stats.py            SportsDataIO endpoints
+    vendors.py          raw passthrough for both vendors
+    fixtures.py, live.py, admin.py, health.py   our backend
 scripts/
-  test_apis.py          live vendor smoke test + report
-  export_openapi.py     writes docs/openapi.json
-tests/                  pytest suite (vendors mocked with respx)
-run project.bat         one-click setup + run
-test apis.bat           unit tests + live vendor tests
+  test_apis.py              live vendor smoke test + report
+  export_openapi.py         writes docs/openapi.json
+  export_endpoints_csv.py   writes docs/api_endpoints.csv
+docs/
+  openapi.json              Swagger/OpenAPI spec (machine-readable API description)
+  api_endpoints.csv         endpoint reference with real example responses
+tests/                      pytest suite (vendors mocked with respx)
+CLAUDE.md                   progress log, known issues, next steps
 ```
 
-## 6. Configuration (`.env`)
+## 7. Configuration (`.env`)
 
-| Variable | Default | Notes |
+| Variable | Current | Notes |
 |---|---|---|
-| `ODDSPAPI_API_KEY` | – | Required for exchange data |
-| `SPORTSDATAIO_API_KEY` | – | Required for stats |
+| `ODDSPAPI_API_KEY` | set | Vendor 1 |
+| `SPORTSDATAIO_API_KEY` | empty | Vendor 2 |
 | `EXCHANGES` | `kalshi,polymarket,polymarket.us,prophetx,limitless-ex` | OddsPapi bookmaker slugs to track |
-| `SPORT_IDS` | `10,11,14` | Add the cricket id printed by `scripts/test_apis.py` |
-| `ODDSPAPI_WS_CHANNELS` | `fixtures,scores,odds` | Also available: `clocks`, `injuries`, `lineups`, `stats`, `events` … |
+| `SPORT_IDS` | `10,11,14` | Add `27` for cricket |
+| `ODDSPAPI_WS_CHANNELS` | `fixtures,scores,odds` | Remove `odds` to avoid the backpressure disconnects (see CLAUDE.md) |
+| `BACKGROUND_JOBS_ENABLED` | `false` | `true` = sync, activation and WebSocket run automatically |
 | `ACTIVATION_WINDOW_HOURS` | `24` | Activate markets this long before start |
 | `DATABASE_URL` | SQLite file | `postgresql+asyncpg://…` for Postgres |
-| `BACKGROUND_JOBS_ENABLED` | `true` | Turn off to use only the on-demand endpoints |
-
-## 7. Known gaps / to confirm with vendors
-
-- **OddsPapi payload shapes**: fixtures, odds and WebSocket envelopes follow the v5 docs. The normalizers accept several shapes. Run `scripts/test_apis.py` once the keys arrive, check `samples/`, then tighten `services/normalize.py`.
-- **OddsPapi WebSocket filters**: the login currently sends channels only. Check the docs for login-time `sportIds`/`bookmakers` filters to reduce volume.
-- **SportsDataIO cricket**: cricket is on their coverage list but not in the public OpenAPI files. Ask the vendor for the cricket (Global API) paths and call them via `/vendors/sportsdataio/...`.
-- **SDX universal IDs**: the `sdx_id` column exists. Fill it once SDX access is set up; until then cross-vendor linking uses fuzzy matching.
-- **Production**: move to Postgres with Alembic migrations, Redis pub/sub for `live_hub`, and authentication on the API. Remove `/vendors/*` passthrough.

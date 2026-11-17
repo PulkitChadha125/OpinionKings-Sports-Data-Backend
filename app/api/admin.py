@@ -6,8 +6,9 @@ from app.api.deps import get_ctx, provider_http_error
 from app.providers.base import ProviderError
 from app.services import jobs
 from app.state import AppState
+from app.api import tags
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(prefix="/admin", tags=[tags.BACKEND_ADMIN])
 
 
 @router.post("/sync-fixtures")

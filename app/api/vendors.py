@@ -7,14 +7,15 @@ Keys are added server-side and never exposed. Disable in production.
 
 from fastapi import APIRouter, Depends, Request
 
+from app.api import tags
 from app.api.deps import get_ctx, provider_http_error
 from app.providers.base import ProviderError
 from app.state import AppState
 
-router = APIRouter(prefix="/vendors", tags=["vendor passthrough (trial only)"])
+router = APIRouter(prefix="/vendors")
 
 
-@router.get("/oddspapi/{path:path}")
+@router.get("/oddspapi/{path:path}", tags=[tags.ODDSPAPI_RAW], summary="Raw OddsPapi GET (key added server-side)")
 async def oddspapi(path: str, request: Request, ctx: AppState = Depends(get_ctx)):
     try:
         return await ctx.oddspapi.get(path, dict(request.query_params))
@@ -22,7 +23,7 @@ async def oddspapi(path: str, request: Request, ctx: AppState = Depends(get_ctx)
         raise provider_http_error(exc)
 
 
-@router.get("/sportsdataio/{path:path}")
+@router.get("/sportsdataio/{path:path}", tags=[tags.SDIO_RAW], summary="Raw SportsDataIO GET (key added server-side)")
 async def sportsdataio(path: str, request: Request, ctx: AppState = Depends(get_ctx)):
     try:
         return await ctx.sportsdataio.get(path, dict(request.query_params))

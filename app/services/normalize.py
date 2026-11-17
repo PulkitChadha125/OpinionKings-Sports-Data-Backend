@@ -60,16 +60,24 @@ def parse_oddspapi_fixture(raw: dict) -> dict | None:
     if not fixture_id or start is None:
         return None
     home_score, away_score = extract_result_score(raw.get("scores"))
+
+    # v5 REST nests these under sport/tournament/participants/status; older/WS shapes are flat.
+    def field(group: str, key: str) -> Any:
+        nested = raw.get(group)
+        if isinstance(nested, dict) and nested.get(key) is not None:
+            return nested[key]
+        return raw.get(key)
+
     return {
         "oddspapi_id": str(fixture_id),
-        "sport_id": raw.get("sportId"),
-        "sport_name": raw.get("sportName"),
-        "tournament_id": raw.get("tournamentId"),
-        "tournament_name": raw.get("tournamentName"),
-        "home": raw.get("participant1Name") or "TBD",
-        "away": raw.get("participant2Name") or "TBD",
+        "sport_id": field("sport", "sportId"),
+        "sport_name": field("sport", "sportName"),
+        "tournament_id": field("tournament", "tournamentId"),
+        "tournament_name": field("tournament", "tournamentName"),
+        "home": field("participants", "participant1Name") or "TBD",
+        "away": field("participants", "participant2Name") or "TBD",
         "start_time": start,
-        "vendor_status_id": raw.get("statusId"),
+        "vendor_status_id": field("status", "statusId"),
         "scores": raw.get("scores"),
         "home_score": home_score,
         "away_score": away_score,

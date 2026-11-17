@@ -8,8 +8,9 @@ from sqlalchemy.orm import selectinload
 from app.api.deps import get_ctx
 from app.models import Fixture, as_utc
 from app.state import AppState
+from app.api import tags
 
-router = APIRouter(prefix="/fixtures", tags=["fixtures"])
+router = APIRouter(prefix="/fixtures", tags=[tags.BACKEND_FIXTURES])
 
 
 class MarketOut(BaseModel):

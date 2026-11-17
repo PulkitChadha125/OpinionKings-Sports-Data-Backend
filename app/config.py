@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     def ws_channel_list(self) -> list[str]:
         return _csv(self.oddspapi_ws_channels)
 
+    @property
+    def ws_filters(self) -> dict:
+        """Login-time WebSocket filters. Without them the odds channel streams every bookmaker
+        and sport, and the server disconnects us with 4002 backpressure."""
+        return {"sportIds": self.sport_id_list, "bookmakers": self.exchange_list}
+
 
 @lru_cache
 def get_settings() -> Settings:

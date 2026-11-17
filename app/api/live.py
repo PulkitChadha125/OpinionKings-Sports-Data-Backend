@@ -4,8 +4,9 @@ from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 
 from app.api.deps import get_ws_ctx
 from app.state import AppState
+from app.api import tags
 
-router = APIRouter(tags=["live"])
+router = APIRouter(tags=[tags.BACKEND_LIVE])
 
 
 @router.websocket("/ws/live")

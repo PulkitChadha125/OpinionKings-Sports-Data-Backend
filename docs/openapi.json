@@ -2,111 +2,14 @@
   "openapi": "3.1.0",
   "info": {
     "title": "OpinionKings Sports Data Backend",
-    "description": "\nSports data + prediction-market backend for **OpinionKings**.\n\nVendors: **OddsPapi** (fixtures, odds and contract mapping for Kalshi, Polymarket,\nPolymarket US, ProphetX, Limitless ...) and **SportsDataIO** (scores, stats, injuries, lineups).\n\n### Quick guide - fetching data from an exchange\n1. `GET /exchanges/sports` - find the `sportId` (e.g. cricket).\n2. `GET /exchanges/kalshi/fixtures?sport_id=10&status=upcoming` - matches listed on Kalshi.\n3. `GET /exchanges/kalshi/fixtures/{fixture_id}/odds` - live prices for that match.\n4. `GET /exchanges/kalshi/mapping?fixture_ids={fixture_id}` - Kalshi's own ticker for the match.\n\nSwap `kalshi` for `polymarket`, `polymarket.us`, `prophetx`, `limitless-ex`, ... (dropdown in each endpoint).\n\n### Our own data\n* `GET /fixtures?lifecycle=ACTIVE` - matches with markets activated (24h before start).\n* `WS  /ws/live?fixture_id=...` - real-time scores / odds / lifecycle pushes.\n",
+    "description": "\nSports data and prediction-market backend for **OpinionKings**. It uses two vendors; each has its own\nsection below, followed by the endpoints for our own data.\n\n---\n\n## 1. OddsPapi: prediction-market exchanges\nBase URL `https://v5.oddspapi.io`, key `ODDSPAPI_API_KEY`, 14-day B2B trial.\nProvides fixtures, live status, scores, **odds with order-book depth**, and each exchange's own id for a match.\nExchanges: `kalshi`, `polymarket`, `polymarket.us`, `prophetx`, `limitless-ex` (also on the trial:\n`betfair-ex`, `matchbook`, `4casters`, `overtime.io`, `draftkings-predictions`).\nSport ids: 10 soccer, 11 basketball, 14 American football, **27 cricket**.\n\n1. `GET /exchanges/sports`: every sport and its id.\n2. `GET /exchanges/kalshi/fixtures?sport_id=10&status=upcoming`: matches listed on Kalshi.\n3. `GET /exchanges/kalshi/fixtures/{fixture_id}/odds`: live prices for one match.\n4. `GET /exchanges/kalshi/mapping?fixture_ids={fixture_id}`: Kalshi's own ticker for that match.\n5. `GET /vendors/oddspapi/{path}`: any other OddsPapi endpoint, untouched.\n\n## 2. SportsDataIO: scores and stats\nBase URL `https://api.sportsdata.io`, key `SPORTSDATAIO_API_KEY` (**not configured yet**; the endpoints return 503).\nProvides schedules, live and final scores, box scores, lineups and injuries. The free trial covers soccer for\nUEFA Champions League (competition 3) only, plus NBA/MLB/NHL.\n\n1. `GET /stats/soccer/games?competition=3&day=YYYY-MM-DD`\n2. `GET /stats/soccer/box-scores?day=YYYY-MM-DD`\n3. `GET /stats/nba/games?day=YYYY-MM-DD`\n4. `GET /vendors/sportsdataio/{path}`: any other SportsDataIO endpoint, untouched.\n\n## 3. Our backend\n* `GET /fixtures?lifecycle=ACTIVE`: matches whose markets were activated (24 h before start).\n* `WS /ws/live?fixture_id=...`: real-time scores, odds and lifecycle updates.\n* `POST /admin/*`: run the background jobs by hand.\n",
     "version": "0.1.0"
   },
   "paths": {
-    "/health": {
-      "get": {
-        "tags": [
-          "health"
-        ],
-        "summary": "Health",
-        "operationId": "health_health_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/metrics/latency": {
-      "get": {
-        "tags": [
-          "health"
-        ],
-        "summary": "Latency",
-        "description": "Live latency/staleness per provider and endpoint (rolling window).",
-        "operationId": "latency_metrics_latency_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/metrics/latency/history": {
-      "get": {
-        "tags": [
-          "health"
-        ],
-        "summary": "Latency History",
-        "description": "Persisted per-minute aggregates - the raw material for the vendor comparison report.",
-        "operationId": "latency_history_metrics_latency_history_get",
-        "parameters": [
-          {
-            "name": "provider",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Provider"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "default": 500,
-              "title": "Limit"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/exchanges/sports": {
       "get": {
         "tags": [
-          "exchanges"
+          "OddsPapi - Exchanges, fixtures & odds"
         ],
         "summary": "List all sports (find the cricket sportId here)",
         "description": "Returns OddsPapi's sport catalogue. Use the `sportId` values in the other endpoints.",
@@ -126,7 +29,7 @@
     "/exchanges": {
       "get": {
         "tags": [
-          "exchanges"
+          "OddsPapi - Exchanges, fixtures & odds"
         ],
         "summary": "List supported exchanges and their metadata",
         "description": "Metadata (name, flags such as `staleOdds`) for every exchange in the `Exchange` enum.",
@@ -146,7 +49,7 @@
     "/exchanges/{exchange}/fixtures": {
       "get": {
         "tags": [
-          "exchanges"
+          "OddsPapi - Exchanges, fixtures & odds"
         ],
         "summary": "Fixtures listed on an exchange",
         "description": "Matches that have markets on the chosen exchange.\n\nExample: `GET /exchanges/kalshi/fixtures?sport_id=10&status=upcoming`",
@@ -246,7 +149,7 @@
     "/exchanges/{exchange}/fixtures/{fixture_id}/odds": {
       "get": {
         "tags": [
-          "exchanges"
+          "OddsPapi - Exchanges, fixtures & odds"
         ],
         "summary": "Prices for a fixture on an exchange",
         "description": "Current odds/prices for every market of this fixture on the exchange\n(`odds[exchange][oddsId]`). Exchanges also carry back/lay ladders and liquidity.\n\nExample: `GET /exchanges/polymarket/fixtures/id1000001761300517/odds`",
@@ -305,7 +208,7 @@
     "/exchanges/{exchange}/mapping": {
       "get": {
         "tags": [
-          "exchanges"
+          "OddsPapi - Exchanges, fixtures & odds"
         ],
         "summary": "Map OddsPapi fixtures to the exchange's own ids",
         "description": "Returns the exchange-native identifier (e.g. Kalshi event ticker, Polymarket market slug)\nfor each fixture - this is how a match is linked to its tradable contract.\n\nExample: `GET /exchanges/kalshi/mapping?fixture_ids=id1000001761300517`",
@@ -364,7 +267,7 @@
     "/stats/soccer/competitions": {
       "get": {
         "tags": [
-          "stats (SportsDataIO)"
+          "SportsDataIO - Scores, stats, lineups & injuries"
         ],
         "summary": "Soccer competitions available on your plan",
         "operationId": "soccer_competitions_stats_soccer_competitions_get",
@@ -383,7 +286,7 @@
     "/stats/soccer/games": {
       "get": {
         "tags": [
-          "stats (SportsDataIO)"
+          "SportsDataIO - Scores, stats, lineups & injuries"
         ],
         "summary": "Soccer games (schedule + live/final scores) for a date",
         "description": "Example: `GET /stats/soccer/games?competition=3&day=2026-11-25`",
@@ -458,7 +361,7 @@
     "/stats/soccer/box-scores": {
       "get": {
         "tags": [
-          "stats (SportsDataIO)"
+          "SportsDataIO - Scores, stats, lineups & injuries"
         ],
         "summary": "Live box scores (team + player stats) for a date",
         "operationId": "soccer_box_scores_stats_soccer_box_scores_get",
@@ -532,7 +435,7 @@
     "/stats/soccer/box-score/{game_id}": {
       "get": {
         "tags": [
-          "stats (SportsDataIO)"
+          "SportsDataIO - Scores, stats, lineups & injuries"
         ],
         "summary": "Box score for one game",
         "operationId": "soccer_box_score_stats_soccer_box_score__game_id__get",
@@ -595,7 +498,7 @@
     "/stats/soccer/lineups": {
       "get": {
         "tags": [
-          "stats (SportsDataIO)"
+          "SportsDataIO - Scores, stats, lineups & injuries"
         ],
         "summary": "Projected/confirmed lineups for a date",
         "operationId": "soccer_lineups_stats_soccer_lineups_get",
@@ -669,7 +572,7 @@
     "/stats/soccer/injuries": {
       "get": {
         "tags": [
-          "stats (SportsDataIO)"
+          "SportsDataIO - Scores, stats, lineups & injuries"
         ],
         "summary": "Injured players",
         "operationId": "soccer_injuries_stats_soccer_injuries_get",
@@ -721,7 +624,7 @@
     "/stats/{league}/games": {
       "get": {
         "tags": [
-          "stats (SportsDataIO)"
+          "SportsDataIO - Scores, stats, lineups & injuries"
         ],
         "summary": "NBA / MLB / NHL games for a date",
         "description": "Example: `GET /stats/nba/games?day=2026-11-25`",
@@ -783,7 +686,7 @@
     "/stats/{league}/injuries": {
       "get": {
         "tags": [
-          "stats (SportsDataIO)"
+          "SportsDataIO - Scores, stats, lineups & injuries"
         ],
         "summary": "NBA / MLB / NHL injuries",
         "operationId": "league_injuries_stats__league__injuries_get",
@@ -819,10 +722,90 @@
         }
       }
     },
+    "/vendors/oddspapi/{path}": {
+      "get": {
+        "tags": [
+          "OddsPapi - Raw passthrough (trial only)"
+        ],
+        "summary": "Raw OddsPapi GET (key added server-side)",
+        "operationId": "oddspapi_vendors_oddspapi__path__get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/vendors/sportsdataio/{path}": {
+      "get": {
+        "tags": [
+          "SportsDataIO - Raw passthrough (trial only)"
+        ],
+        "summary": "Raw SportsDataIO GET (key added server-side)",
+        "operationId": "sportsdataio_vendors_sportsdataio__path__get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/fixtures": {
       "get": {
         "tags": [
-          "fixtures"
+          "Backend - Fixtures & market lifecycle"
         ],
         "summary": "List Fixtures",
         "operationId": "list_fixtures_fixtures_get",
@@ -901,7 +884,7 @@
     "/fixtures/{fixture_id}": {
       "get": {
         "tags": [
-          "fixtures"
+          "Backend - Fixtures & market lifecycle"
         ],
         "summary": "Get Fixture",
         "description": "Lookup by internal id or OddsPapi fixture id.",
@@ -944,7 +927,7 @@
     "/admin/sync-fixtures": {
       "post": {
         "tags": [
-          "admin"
+          "Backend - Admin jobs"
         ],
         "summary": "Sync Fixtures",
         "operationId": "sync_fixtures_admin_sync_fixtures_post",
@@ -963,7 +946,7 @@
     "/admin/activate-markets": {
       "post": {
         "tags": [
-          "admin"
+          "Backend - Admin jobs"
         ],
         "summary": "Activate Markets",
         "operationId": "activate_markets_admin_activate_markets_post",
@@ -982,7 +965,7 @@
     "/admin/link-sportsdataio": {
       "post": {
         "tags": [
-          "admin"
+          "Backend - Admin jobs"
         ],
         "summary": "Link Sportsdataio",
         "operationId": "link_sportsdataio_admin_link_sportsdataio_post",
@@ -1027,24 +1010,13 @@
         }
       }
     },
-    "/vendors/oddspapi/{path}": {
+    "/health": {
       "get": {
         "tags": [
-          "vendor passthrough (trial only)"
+          "Backend - Health & vendor metrics"
         ],
-        "summary": "Oddspapi",
-        "operationId": "oddspapi_vendors_oddspapi__path__get",
-        "parameters": [
-          {
-            "name": "path",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Path"
-            }
-          }
-        ],
+        "summary": "Health",
+        "operationId": "health_health_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -1053,35 +1025,63 @@
                 "schema": {}
               }
             }
-          },
-          "422": {
-            "description": "Validation Error",
+          }
+        }
+      }
+    },
+    "/metrics/latency": {
+      "get": {
+        "tags": [
+          "Backend - Health & vendor metrics"
+        ],
+        "summary": "Latency",
+        "description": "Live latency/staleness per provider and endpoint (rolling window).",
+        "operationId": "latency_metrics_latency_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
+                "schema": {}
               }
             }
           }
         }
       }
     },
-    "/vendors/sportsdataio/{path}": {
+    "/metrics/latency/history": {
       "get": {
         "tags": [
-          "vendor passthrough (trial only)"
+          "Backend - Health & vendor metrics"
         ],
-        "summary": "Sportsdataio",
-        "operationId": "sportsdataio_vendors_sportsdataio__path__get",
+        "summary": "Latency History",
+        "description": "Persisted per-minute aggregates - the raw material for the vendor comparison report.",
+        "operationId": "latency_history_metrics_latency_history_get",
         "parameters": [
           {
-            "name": "path",
-            "in": "path",
-            "required": true,
+            "name": "provider",
+            "in": "query",
+            "required": false,
             "schema": {
-              "type": "string",
-              "title": "Path"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Provider"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 500,
+              "title": "Limit"
             }
           }
         ],
@@ -1600,32 +1600,36 @@
   },
   "tags": [
     {
-      "name": "exchanges",
-      "description": "Fetch fixtures, prices and contract ids from each prediction-market exchange (via OddsPapi)."
+      "name": "OddsPapi - Exchanges, fixtures & odds",
+      "description": "**Vendor 1: OddsPapi** (`https://v5.oddspapi.io`, key `ODDSPAPI_API_KEY`). Prediction-market data: matches listed on Kalshi, Polymarket, Polymarket US, ProphetX, Limitless..., live prices with order-book depth, and each exchange's own id for a match (Kalshi ticker, Polymarket slug). Sport ids: 10 soccer, 11 basketball, 14 American football, 27 cricket."
     },
     {
-      "name": "stats (SportsDataIO)",
-      "description": "Scores, box scores, lineups and injuries from SportsDataIO."
+      "name": "OddsPapi - Raw passthrough (trial only)",
+      "description": "Any OddsPapi GET endpoint, with the key added on the server side. Example: path `fixtures/today`, query `sportId=10`. Docs: https://docs.oddspapi.io. Remove in production."
     },
     {
-      "name": "fixtures",
-      "description": "Our normalized fixtures with lifecycle state and mapped exchange markets."
+      "name": "SportsDataIO - Scores, stats, lineups & injuries",
+      "description": "**Vendor 2: SportsDataIO** (`https://api.sportsdata.io`, key `SPORTSDATAIO_API_KEY`). Game data: schedules, live and final scores, box scores (player and team stats), lineups, injuries. The free trial covers soccer for UEFA Champions League (competition 3) only, plus NBA/MLB/NHL. Returns 503 until the key is set."
     },
     {
-      "name": "live",
-      "description": "WebSocket `/ws/live` (not executable from Swagger - see README)."
+      "name": "SportsDataIO - Raw passthrough (trial only)",
+      "description": "Any SportsDataIO GET endpoint, with the key added on the server side. Example path: `v4/soccer/scores/json/Competitions`. Remove in production."
     },
     {
-      "name": "admin",
-      "description": "Trigger background jobs manually."
+      "name": "Backend - Fixtures & market lifecycle",
+      "description": "Our own database: fixtures merged from both vendors, with lifecycle state (SCHEDULED, ACTIVE, LIVE, FINISHED, ...) and the exchange markets mapped to each one."
     },
     {
-      "name": "health",
-      "description": "Service status and vendor latency metrics."
+      "name": "Backend - Live WebSocket",
+      "description": "WebSocket `/ws/live`. Swagger can't run WebSockets; see the README."
     },
     {
-      "name": "vendor passthrough (trial only)",
-      "description": "Raw GET passthrough to vendor APIs for exploration."
+      "name": "Backend - Admin jobs",
+      "description": "Trigger the background jobs by hand."
+    },
+    {
+      "name": "Backend - Health & vendor metrics",
+      "description": "Service status, key configuration and per-vendor latency metrics."
     }
   ]
 }

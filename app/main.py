@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from sqlalchemy import select
 
 from app.api import admin, exchanges, fixtures, health, live, stats, vendors
+from app.api.tags import OPENAPI_TAGS
 from app.config import get_settings
 from app.db import create_tables, make_engine, make_session_factory
 from app.models import Fixture
@@ -50,7 +51,7 @@ def build_stream(state: AppState) -> OddsPapiStream:
         asyncio.create_task(jobs.sync_fixtures(state.session_factory, state.oddspapi, s, state.hub))
 
     return OddsPapiStream(s.oddspapi_ws_url, s.oddspapi_api_key, s.ws_channel_list, state.tracker, state.hub,
-                          on_fixture_update=on_fixture_update, on_snapshot_required=on_snapshot_required)
+                          filters=s.ws_filters, on_fixture_update=on_fixture_update, on_snapshot_required=on_snapshot_required)
 
 
 @asynccontextmanager
@@ -95,40 +96,47 @@ async def lifespan(app: FastAPI):
 
 
 DESCRIPTION = """
-Sports data + prediction-market backend for **OpinionKings**.
+Sports data and prediction-market backend for **OpinionKings**. It uses two vendors; each has its own
+section below, followed by the endpoints for our own data.
 
-Vendors: **OddsPapi** (fixtures, odds and contract mapping for Kalshi, Polymarket,
-Polymarket US, ProphetX, Limitless ...) and **SportsDataIO** (scores, stats, injuries, lineups).
+---
 
-### Quick guide - fetching data from an exchange
-1. `GET /exchanges/sports` - find the `sportId` (e.g. cricket).
-2. `GET /exchanges/kalshi/fixtures?sport_id=10&status=upcoming` - matches listed on Kalshi.
-3. `GET /exchanges/kalshi/fixtures/{fixture_id}/odds` - live prices for that match.
-4. `GET /exchanges/kalshi/mapping?fixture_ids={fixture_id}` - Kalshi's own ticker for the match.
+## 1. OddsPapi: prediction-market exchanges
+Base URL `https://v5.oddspapi.io`, key `ODDSPAPI_API_KEY`, 14-day B2B trial.
+Provides fixtures, live status, scores, **odds with order-book depth**, and each exchange's own id for a match.
+Exchanges: `kalshi`, `polymarket`, `polymarket.us`, `prophetx`, `limitless-ex` (also on the trial:
+`betfair-ex`, `matchbook`, `4casters`, `overtime.io`, `draftkings-predictions`).
+Sport ids: 10 soccer, 11 basketball, 14 American football, **27 cricket**.
 
-Swap `kalshi` for `polymarket`, `polymarket.us`, `prophetx`, `limitless-ex`, ... (dropdown in each endpoint).
+1. `GET /exchanges/sports`: every sport and its id.
+2. `GET /exchanges/kalshi/fixtures?sport_id=10&status=upcoming`: matches listed on Kalshi.
+3. `GET /exchanges/kalshi/fixtures/{fixture_id}/odds`: live prices for one match.
+4. `GET /exchanges/kalshi/mapping?fixture_ids={fixture_id}`: Kalshi's own ticker for that match.
+5. `GET /vendors/oddspapi/{path}`: any other OddsPapi endpoint, untouched.
 
-### Our own data
-* `GET /fixtures?lifecycle=ACTIVE` - matches with markets activated (24h before start).
-* `WS  /ws/live?fixture_id=...` - real-time scores / odds / lifecycle pushes.
+## 2. SportsDataIO: scores and stats
+Base URL `https://api.sportsdata.io`, key `SPORTSDATAIO_API_KEY` (**not configured yet**; the endpoints return 503).
+Provides schedules, live and final scores, box scores, lineups and injuries. The free trial covers soccer for
+UEFA Champions League (competition 3) only, plus NBA/MLB/NHL.
+
+1. `GET /stats/soccer/games?competition=3&day=YYYY-MM-DD`
+2. `GET /stats/soccer/box-scores?day=YYYY-MM-DD`
+3. `GET /stats/nba/games?day=YYYY-MM-DD`
+4. `GET /vendors/sportsdataio/{path}`: any other SportsDataIO endpoint, untouched.
+
+## 3. Our backend
+* `GET /fixtures?lifecycle=ACTIVE`: matches whose markets were activated (24 h before start).
+* `WS /ws/live?fixture_id=...`: real-time scores, odds and lifecycle updates.
+* `POST /admin/*`: run the background jobs by hand.
 """
 
-TAGS = [
-    {"name": "exchanges", "description": "Fetch fixtures, prices and contract ids from each prediction-market exchange (via OddsPapi)."},
-    {"name": "stats (SportsDataIO)", "description": "Scores, box scores, lineups and injuries from SportsDataIO."},
-    {"name": "fixtures", "description": "Our normalized fixtures with lifecycle state and mapped exchange markets."},
-    {"name": "live", "description": "WebSocket `/ws/live` (not executable from Swagger - see README)."},
-    {"name": "admin", "description": "Trigger background jobs manually."},
-    {"name": "health", "description": "Service status and vendor latency metrics."},
-    {"name": "vendor passthrough (trial only)", "description": "Raw GET passthrough to vendor APIs for exploration."},
-]
 
 app = FastAPI(title="OpinionKings Sports Data Backend", version="0.1.0", description=DESCRIPTION,
-              openapi_tags=TAGS, lifespan=lifespan)
-app.include_router(health.router)
+              openapi_tags=OPENAPI_TAGS, lifespan=lifespan)
 app.include_router(exchanges.router)
 app.include_router(stats.router)
+app.include_router(vendors.router)
 app.include_router(fixtures.router)
 app.include_router(live.router)
 app.include_router(admin.router)
-app.include_router(vendors.router)
+app.include_router(health.router)

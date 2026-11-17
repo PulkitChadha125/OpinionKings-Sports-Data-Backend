@@ -85,8 +85,9 @@ async def test_oddspapi(op: OddsPapiClient, exchanges: list[str]) -> dict:
         data = await check("oddspapi", f"fixtures_{label}_on_exchanges",
                            lambda sid=sid: op.fixtures(sport_id=sid, bookmakers=exchanges))
         fixtures_all += [f for f in (parse_oddspapi_fixture(r) for r in as_list(data)) if f]
-    await check("oddspapi", "fixtures_live", lambda: op.fixtures_live(bookmakers=exchanges))
-    await check("oddspapi", "fixtures_today", lambda: op.fixtures_today(bookmakers=exchanges))
+    # /fixtures/live and /fixtures/today require sportId or tournamentId
+    await check("oddspapi", "fixtures_live_soccer", lambda: op.fixtures_live(sport_id=10, bookmakers=exchanges))
+    await check("oddspapi", "fixtures_today_soccer", lambda: op.fixtures_today(sport_id=10, bookmakers=exchanges))
 
     now = datetime.now(timezone.utc)
     upcoming = sorted((f for f in fixtures_all if f["start_time"] >= now - timedelta(hours=3)),
@@ -116,7 +117,7 @@ async def test_oddspapi_ws(settings, seconds: int) -> None:
         return
     tracker = LatencyTracker()
     stream = OddsPapiStream(settings.oddspapi_ws_url, settings.oddspapi_api_key, settings.ws_channel_list,
-                            tracker, LiveHub())
+                            tracker, LiveHub(), filters=settings.ws_filters)
     print(f"         -> listening to WebSocket for {seconds}s on {settings.ws_channel_list} ...")
     await stream.run(stop_after=seconds)
     total = sum(stream.message_counts.values())

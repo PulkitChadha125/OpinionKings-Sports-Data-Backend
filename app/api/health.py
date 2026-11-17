@@ -4,8 +4,9 @@ from sqlalchemy import select
 from app.api.deps import get_ctx
 from app.models import LatencySummary
 from app.state import AppState
+from app.api import tags
 
-router = APIRouter(tags=["health"])
+router = APIRouter(tags=[tags.BACKEND_HEALTH])
 
 
 @router.get("/health")

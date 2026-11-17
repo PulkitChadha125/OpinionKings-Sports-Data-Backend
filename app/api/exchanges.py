@@ -13,8 +13,9 @@ from app.api.deps import get_ctx, provider_http_error
 from app.providers.base import ProviderError
 from app.services.normalize import as_list, parse_oddspapi_fixture
 from app.state import AppState
+from app.api import tags
 
-router = APIRouter(prefix="/exchanges", tags=["exchanges"])
+router = APIRouter(prefix="/exchanges", tags=[tags.ODDSPAPI_EXCHANGES])
 
 
 class Exchange(str, Enum):

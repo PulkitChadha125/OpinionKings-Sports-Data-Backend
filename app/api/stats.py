@@ -8,8 +8,9 @@ from fastapi import APIRouter, Depends, Path, Query
 from app.api.deps import get_ctx, provider_http_error
 from app.providers.base import ProviderError
 from app.state import AppState
+from app.api import tags
 
-router = APIRouter(prefix="/stats", tags=["stats (SportsDataIO)"])
+router = APIRouter(prefix="/stats", tags=[tags.SDIO_STATS])
 
 
 class League(str, Enum):
